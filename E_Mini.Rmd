@@ -1,0 +1,169 @@
+---
+title: "E_Mini"
+subtitle: "The best Arima summary scores don't neccesarily make the \n best fitting models or best looking graphs."
+author: "Stefan Skinner"
+date: "2022-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse) 
+
+library(mice) 
+ 
+library(forecast)
+ 
+library(lubridate)
+
+library(readr)
+
+library(scales)
+
+options(max.print = 200, scipen=999)
+
+library("fUnitRoots")
+
+library(lmtest)
+
+library(urca)
+
+library(tseries)
+
+library(seastests)
+
+library(scatterplot3d)
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+
+```{r, echo = FALSE}
+
+E_Mini_S_P_500_weekly <- 
+  as_tibble(read_delim("./E-Mini S&P 500 _ weekly _ 2001 - 2010 .tsv", 
+  delim = "\t", escape_double = FALSE,
+  col_types = cols(`Adj Close**` = col_skip()),
+  trim_ws = TRUE))
+  
+  colnames(E_Mini_S_P_500_weekly)[5] <- c("Close")
+
+  tmp_vector <- tibble()
+
+  for(x in 1:nrow(E_Mini_S_P_500_weekly))
+  {
+    tmp_vector[x,1] <- as_date(strptime(E_Mini_S_P_500_weekly[x, 1], format = "%b%d,%Y"))
+
+  } # end for
+
+  E_Mini_S_P_500_weekly[, 1] <- tmp_vector
+
+  # E_Mini_S_P_500_weekly$Date <- as.Date(E_Mini_S_P_500_weekly$Date)
+
+  E_Mini_S_P_500_weekly <- E_Mini_S_P_500_weekly[order(E_Mini_S_P_500_weekly$Date),]
+
+  testr <- sum(as.integer(is.na(E_Mini_S_P_500_weekly)))
+
+  if(testr > 0)
+  {
+
+    test_mice <- mice(data = E_Mini_S_P_500_weekly[, c(2:6)], m = 5, method = "pmm", maxit = 50, seed = 500)
+
+    post_mice <- complete(test_mice, 5)
+
+    E_Mini_S_P_500_weekly$Open <- post_mice$Open
+
+    E_Mini_S_P_500_weekly$High <- post_mice$High
+
+    E_Mini_S_P_500_weekly$Low <- post_mice$Low
+
+    E_Mini_S_P_500_weekly$Close <- post_mice$Close
+
+    E_Mini_S_P_500_weekly$Volume <- post_mice$Volume
+
+  } # end if
+
+  E_Mini_S_P_500_weekly_cond <- E_Mini_S_P_500_weekly[1:first(grep("2007", E_Mini_S_P_500_weekly$Date)),]
+
+  E_Mini_S_P_500_weekly_cond_rev <- E_Mini_S_P_500_weekly[first(grep("2007", E_Mini_S_P_500_weekly$Date)):nrow(E_Mini_S_P_500_weekly),]
+
+  E_Mini_S_P_500_weekly_cond_date_close_ts <- ts(E_Mini_S_P_500_weekly_cond$Close, start = c(2001, 31), frequency =  52)
+
+  (Arima(E_Mini_S_P_500_weekly_cond_date_close_ts, order=c(0,1,0), seasonal = list(order = c(0,1,1), period = 52)))
+
+  #fit the model
+  fitARIMA_1 <- Arima(E_Mini_S_P_500_weekly_cond_date_close_ts, order=c(0,1,0), seasonal = list(order = c(0,1,1), period = 52))
+
+  E_Mini_forecast_1 <- forecast(fitARIMA_1, h=156, level=c(60, 85))
+
+  plot(E_Mini_forecast_1, main = "E-Mini S&P 500 '01 - '06 actual w ARIMA [0,1,0][0,1,1] [52] '07 - '09 \n with 60-85 confidence bands", xlab = "Date", ylab = "Close")
+
+  plot(E_Mini_S_P_500_weekly_cond_date_close_ts, main = "E-Mini S&P 500 '01 - '06 actual \n w ARIMA [0,1,0][0,1,1] [52] blue overlay", ylab = "Closing Price")
+  
+  lines(fitted(E_Mini_forecast_1), col="blue")
+  
+  auto.arima(E_Mini_S_P_500_weekly_cond_date_close_ts)
+  
+  #fit the model
+  fitARIMA_2 <- Arima(E_Mini_S_P_500_weekly_cond_date_close_ts, order=c(0,1,0), seasonal = list(order = c(1,0,0), period = 52), include.drift = TRUE )
+
+  E_Mini_forecast_2 <- forecast(fitARIMA_2, h=156, level=c(60, 85))
+
+  plot(E_Mini_forecast_2, main = "E-Mini S&P 500 '01 - '06 actual w auto.arima [0,1,0][1,0,0] [52] '07 - '09 \n with 60-85 confidence bands", xlab = "Date", ylab = "Close")
+
+  plot(E_Mini_S_P_500_weekly_cond_date_close_ts, main = "E-Mini S&P 500 '01 - '06 actual \n w auto.arima  [0,1,0][1,0,0] [52] blue overlay", ylab = "Closing Price")
+  
+  lines(fitted(E_Mini_forecast_2), col="blue")
+
+
+  nas_full_min <- round(min(E_Mini_S_P_500_weekly$Close),0)
+
+  nas_cond_min <- round(min(E_Mini_S_P_500_weekly_cond$Close), 0)
+
+  nas_cond_rev_min <- round(min(E_Mini_S_P_500_weekly_cond_rev$Close), 0)
+
+  nas_cond_rev_max <- round(max(E_Mini_S_P_500_weekly_cond_rev$Close), 0)
+
+  date_one <- E_Mini_S_P_500_weekly[which(E_Mini_S_P_500_weekly$Close==min(E_Mini_S_P_500_weekly_cond$Close)), 1]
+
+  date_one <- as.Date(date_one$Date)
+
+  date_two <- E_Mini_S_P_500_weekly[which(E_Mini_S_P_500_weekly$Close==min(E_Mini_S_P_500_weekly_cond_rev$Close)), 1]
+
+  date_two <- as.Date(date_two$Date)
+
+  date_three <- E_Mini_S_P_500_weekly[which(E_Mini_S_P_500_weekly$Close==max(E_Mini_S_P_500_weekly_cond_rev$Close)), 1]
+
+  date_three <- as.Date(date_three$Date)
+
+  date_four <- E_Mini_S_P_500_weekly_cond[which(E_Mini_S_P_500_weekly_cond$Close==min(E_Mini_S_P_500_weekly_cond$Close)), 1]
+
+  date_four <- as.Date(date_four$Date)
+  
+  date_five_max <- max(E_Mini_S_P_500_weekly$Close)
+
+  date_five_date_row <- which(E_Mini_S_P_500_weekly$Close == date_five_max)
+
+  date_five_date_row_cont <- E_Mini_S_P_500_weekly[date_five_date_row,] 
+
+  date_five_date <- as.Date(date_five_date_row_cont$Date)
+  
+  E_Mini_S_P_500_weekly_plot <-  ggplot(E_Mini_S_P_500_weekly[,1:6], aes(Date, Close, colour = Volume)) +
+    scale_fill_continuous(labels = scales::unit_format(unit = "K", scale = 1e-3)) + scale_color_continuous(labels = scales::unit_format(unit = "K", scale = 1e-3)) +
+    geom_point() +
+    #scale_fill_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
+    #scale_color_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
+    #scale_fill_continuous(labels = scales::unit_format(unit = "B", scale = 1e-9)) +
+    #scale_color_continuous(labels = scales::unit_format(unit = "B", scale = 1e-9)) +
+    geom_jitter() +
+    geom_label(aes(label = paste('$',formatC(nas_cond_min, big.mark=',', format = 'fg'), " / ", date_one), date_one, y = nas_cond_min), label.size = 0.25, hjust = 0.5, vjust = 1.5) +
+    geom_label(aes(label = paste('$',formatC(nas_cond_rev_min, big.mark=',', format = 'fg'), "\n", date_two), date_two, y = nas_cond_rev_min), label.size = 0.25, hjust = 1.1, vjust = 1) +
+    geom_label(aes(label = paste('$',formatC(nas_cond_rev_max, big.mark=',', format = 'fg'), "\n", date_five_date), date_five_date, y = date_five_max), label.size = 0.25, hjust = 1, vjust = -0.35) +
+    coord_cartesian(ylim = c((nas_cond_rev_min-(nas_cond_rev_min*0.2)), (nas_cond_rev_max+(nas_cond_rev_max*0.2)))) +
+    ggtitle("E-Mini S&P 500 weekly actual '01 - '10")
+  E_Mini_S_P_500_weekly_plot
+
+```
+
+
